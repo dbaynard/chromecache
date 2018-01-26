@@ -1,7 +1,10 @@
 use std::env;
 use std::io;
+use std::fs::read_dir;
 use std::io::ErrorKind::*;
 use std::path::{Path,PathBuf};
+use std::ffi::OsStr;
+use std::fmt::Display;
 
 extern crate rusty_leveldb;
 use rusty_leveldb::{DB,Options,Status};
@@ -15,12 +18,35 @@ fn gcache() -> ldb::Result<()> {
 
     let dirs = d.as_str()?;
 
-    let mut db = DB::open(
+    let db = DB::open(
         dirs.gcache_leveldb_dir,
         Options::default(),
     )?;
 
+    let cache = read_dir(dirs.gcache_file_dir)?;
+
+    //cache.for_each(lookup_arg(&mut db));
+    //env::args.for_each();
+
     Ok(())
+}
+
+fn lookup_arg<'a, P>(db: &'a mut DB) -> Box<FnMut(P) -> ldb::Result<()> + 'a>
+    where P: AsRef<Path> + Display
+{
+    Box::new( move |a| {
+        let key = a.as_ref().file_name()
+            .and_then(OsStr::to_str)
+            .map(str::as_bytes)
+            .ok_or(
+                io::Error::new(NotFound, format!("Can’t find file {}.", a))
+                )?;
+        let out = db.get(key).ok_or(
+                io::Error::new(NotFound, format!("Can’t find file corresponding to {:?}.", key))
+                )?;
+        println!("{:?}", out);
+        Ok(())
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -29,7 +55,6 @@ struct Dirs<P: AsRef<Path>> {
     gcache_file_dir: P,
     gcache_leveldb_dir: P,
 }
-
 
 impl Dirs<PathBuf> {
     fn new() -> io::Result<Dirs<PathBuf>> {
